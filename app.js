@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 
@@ -10,7 +11,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const CLD = 'https://res.cloudinary.com/dnxauc2ly';
+const CLD = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}`;
 
 function img(id, w = 800, h = 600) {
   return `${CLD}/image/upload/w_${w},h_${h},c_fill,q_auto,f_auto/ayrus-creatives/${id}.png`;
