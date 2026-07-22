@@ -1,6 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const { Resend } = require('resend');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -191,13 +194,35 @@ app.get('/', (req, res) => {
   res.render('index', { data });
 });
 
-app.post('/contact', (req, res) => {
+app.post('/contact', async (req, res) => {
   const { name, email, message } = req.body;
-  console.log('\n📬 New contact form submission:');
-  console.log(`  Name: ${name}`);
-  console.log(`  Email: ${email}`);
-  console.log(`  Message: ${message}`);
-  res.json({ success: true, message: 'Thanks! Your message has been received.' });
+  console.log('\n📬 New contact form submission:', { name, email });
+
+  try {
+    await resend.emails.send({
+      from: 'Portfolio Contact <onboarding@resend.dev>',
+      to: 'suryamali007@gmail.com',
+      subject: `New message from ${name} via Portfolio`,
+      html: `
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#0a0a1a;color:#e8e8f0;border-radius:12px;">
+          <h2 style="color:#00d4ff;margin-bottom:4px;">New Portfolio Message</h2>
+          <p style="color:#7a7a9a;margin-top:0;font-size:14px;">Someone reached out via your portfolio contact form.</p>
+          <hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:20px 0;" />
+          <p><strong style="color:#b0a8ff;">Name:</strong> ${name}</p>
+          <p><strong style="color:#b0a8ff;">Email:</strong> <a href="mailto:${email}" style="color:#00d4ff;">${email}</a></p>
+          <p><strong style="color:#b0a8ff;">Message:</strong></p>
+          <p style="background:rgba(255,255,255,0.04);padding:16px;border-radius:8px;border-left:3px solid #00d4ff;line-height:1.7;">${message.replace(/\n/g, '<br/>')}</p>
+          <hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:20px 0;" />
+          <p style="font-size:12px;color:#7a7a9a;">Sent from suryakiran-portfolio</p>
+        </div>
+      `,
+    });
+
+    res.json({ success: true, message: "Thanks! I'll get back to you soon." });
+  } catch (err) {
+    console.error('Resend error:', err);
+    res.status(500).json({ success: false, message: 'Failed to send message. Please try again.' });
+  }
 });
 
 app.listen(PORT, () => {

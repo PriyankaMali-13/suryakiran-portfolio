@@ -95,6 +95,7 @@ if (form) {
       msgDiv.className = 'mt-3 alert alert-success py-2 px-3';
       msgDiv.textContent = data.message || 'Message sent!';
       form.reset();
+      setTimeout(() => { msgDiv.classList.add('d-none'); }, 3000);
     } catch {
       msgDiv.className = 'mt-3 alert alert-danger py-2 px-3';
       msgDiv.textContent = 'Something went wrong. Please try again.';
