@@ -58,16 +58,25 @@ async function fetchMedia() {
     const all = [...images.resources.map(toItem), ...videos.resources.map(toItem)]
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    // Featured: item with position='featured', fallback to first video
-    const featured = all.find(i => i.position === 'featured') || all.find(i => i.isVideo) || all[0];
+    // Build pinned map from position context
+    const pinned = {};
+    all.forEach(i => { if (i.position) pinned[i.position] = i; });
 
-    // Side items: next 4 items that aren't the featured one
-    const featuredSide = all.filter(i => i.public_id !== featured?.public_id).slice(0, 4);
+    // Featured slot
+    const featured = pinned['featured'] || all.find(i => i.isVideo) || all[0];
+
+    // Side slots — use pinned side-1…side-4, fill gaps from remaining items
+    const usedIds = new Set([featured?.public_id].filter(Boolean));
+    ['side-1','side-2','side-3','side-4'].forEach(p => { if (pinned[p]) usedIds.add(pinned[p].public_id); });
+    const remaining = all.filter(i => !usedIds.has(i.public_id));
+    let ri = 0;
+    const featuredSide = ['side-1','side-2','side-3','side-4'].map(p => pinned[p] || remaining[ri++] || null).filter(Boolean);
 
     // Group into categories by type
     const categoryMap = {};
     all.forEach(item => {
-      const cat = item.type || 'Other';
+      const cat = item.type;
+      if (!cat || cat === 'Other') return; // skip items with no type
       if (!categoryMap[cat]) categoryMap[cat] = [];
       categoryMap[cat].push(item);
     });
@@ -204,6 +213,81 @@ app.post('/contact', async (req, res) => {
   } catch (err) {
     console.error('Resend error:', err);
     res.status(500).json({ success: false, message: 'Failed to send message. Please try again.' });
+  }
+});
+
+// ── Admin: position manager ───────────────────────────────────────────────────
+const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'ayrus2025';
+const ADMIN_TOKEN = Buffer.from(ADMIN_PASS).toString('base64');
+
+function isAdminAuthed(req) {
+  return req.headers.cookie?.includes(`sk_admin=${ADMIN_TOKEN}`);
+}
+
+app.get('/admin', async (req, res) => {
+  if (!isAdminAuthed(req)) {
+    return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+    <title>Admin Login</title>
+    <style>
+      body{font-family:system-ui,sans-serif;background:#0f0f0f;color:#e8e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+      .box{background:#1a1a2e;border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:40px 36px;width:360px}
+      h2{font-size:1.2rem;color:#00d4ff;margin-bottom:24px}
+      input{width:100%;padding:10px 14px;border-radius:8px;background:#111;border:1px solid rgba(255,255,255,0.12);color:#e8e8f0;font-size:0.9rem;margin-bottom:14px;box-sizing:border-box}
+      input:focus{outline:none;border-color:#00d4ff}
+      button{width:100%;padding:11px;border-radius:8px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.35);color:#00d4ff;font-size:0.9rem;font-weight:600;cursor:pointer}
+      button:hover{background:rgba(0,212,255,0.28)}
+      .err{color:#ff5050;font-size:0.8rem;margin-top:8px}
+    </style></head>
+    <body><div class="box">
+      <h2>Admin — Position Manager</h2>
+      <form method="POST" action="/admin/login">
+        <input type="password" name="password" placeholder="Enter password" autofocus required />
+        <button type="submit">Login</button>
+        ${req.query.err ? '<p class="err">Incorrect password.</p>' : ''}
+      </form>
+    </div></body></html>`);
+  }
+  const media = await fetchMedia();
+  const all = media.categories.flatMap(c => c.items);
+  const seen = new Set();
+  const items = all.filter(i => seen.has(i.public_id) ? false : seen.add(i.public_id));
+  res.render('admin', { items });
+});
+
+app.post('/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASS) {
+    res.setHeader('Set-Cookie', `sk_admin=${ADMIN_TOKEN}; Path=/; HttpOnly; Max-Age=28800`);
+    return res.redirect('/admin');
+  }
+  res.redirect('/admin?err=1');
+});
+
+app.post('/admin/logout', (req, res) => {
+  res.setHeader('Set-Cookie', 'sk_admin=; Path=/; Max-Age=0');
+  res.redirect('/admin');
+});
+
+app.post('/admin/set-position', async (req, res) => {
+  if (!isAdminAuthed(req)) return res.status(401).json({ error: 'Unauthorised' });
+  const { public_id, position, isVideo, brand, type, brief } = req.body;
+  const resourceType = isVideo === 'true' ? 'video' : 'image';
+  try {
+    // Fetch existing context to preserve work_id
+    const existing = await cloudinary.api.resource(public_id, { resource_type: resourceType, context: true });
+    const ctx = existing.context?.custom || {};
+    const newCtx = [
+      `brand=${brand ?? ctx.brand ?? ''}`,
+      `type=${type ?? ctx.type ?? ''}`,
+      `brief=${brief ?? ctx.brief ?? ''}`,
+      `position=${position ?? ctx.position ?? ''}`,
+      ctx.work_id ? `work_id=${ctx.work_id}` : '',
+    ].filter(Boolean).join('|');
+    await cloudinary.uploader.explicit(public_id, { type: 'upload', resource_type: resourceType, context: newCtx });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Position update error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

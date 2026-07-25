@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Position Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e8e8f0; min-height: 100vh; padding: 40px 24px; }
+    h1 { font-size: 1.4rem; font-weight: 700; color: #00d4ff; margin-bottom: 8px; }
+    p.sub { font-size: 0.85rem; color: #7a7a9a; margin-bottom: 32px; }
+    .legend {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px;
+    }
+    .badge {
+      font-size: 0.72rem; font-weight: 600; padding: 4px 12px;
+      border-radius: 50px; letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .badge-featured  { background: rgba(0,212,255,0.15); color: #00d4ff; border: 1px solid rgba(0,212,255,0.3); }
+    .badge-side      { background: rgba(124,106,255,0.15); color: #7c6aff; border: 1px solid rgba(124,106,255,0.3); }
+    .badge-none      { background: rgba(255,255,255,0.06); color: #7a7a9a; border: 1px solid rgba(255,255,255,0.1); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+
+    .card {
+      background: #1a1a2e; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: rgba(0,212,255,0.3); }
+    .card-thumb {
+      width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block;
+      background: #111;
+    }
+    .card-body { padding: 12px 14px; }
+    .card-brand { font-size: 0.85rem; font-weight: 700; color: #e8e8f0; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-type  { font-size: 0.7rem; color: #7a7a9a; margin-bottom: 10px; }
+
+    select {
+      width: 100%; padding: 7px 10px; border-radius: 6px;
+      background: #111; border: 1px solid rgba(255,255,255,0.12);
+      color: #e8e8f0; font-size: 0.8rem; cursor: pointer;
+      margin-bottom: 8px;
+    }
+    select:focus { outline: none; border-color: #00d4ff; }
+
+    .save-btn {
+      width: 100%; padding: 7px; border-radius: 6px;
+      background: rgba(0,212,255,0.12); border: 1px solid rgba(0,212,255,0.3);
+      color: #00d4ff; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .save-btn:hover  { background: rgba(0,212,255,0.25); }
+    .save-btn.saving { opacity: 0.6; pointer-events: none; }
+    .save-btn.saved  { background: rgba(0,255,128,0.12); border-color: rgba(0,255,128,0.3); color: #00ff80; }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1a1a2e; border: 1px solid rgba(0,212,255,0.3);
+      color: #00d4ff; padding: 12px 20px; border-radius: 8px;
+      font-size: 0.85rem; opacity: 0; transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+    <h1>Position Manager</h1>
+    <form method="POST" action="/admin/logout">
+      <button style="background:rgba(255,80,80,0.1);border:1px solid rgba(255,80,80,0.3);color:#ff5050;padding:6px 16px;border-radius:6px;font-size:0.8rem;cursor:pointer">Logout</button>
+    </form>
+  </div>
+  <p class="sub">Set which item appears in each slot of the featured bento grid on the homepage.</p>
+
+  <div class="legend">
+    <span class="badge badge-featured">1 — Featured (large left)</span>
+    <span class="badge badge-side">2 — Side top-left</span>
+    <span class="badge badge-side">3 — Side top-right</span>
+    <span class="badge badge-side">4 — Side bottom-left</span>
+    <span class="badge badge-side">5 — Side bottom-right</span>
+    <span class="badge badge-none">None — category grid only</span>
+  </div>
+
+  <div class="grid">
+    <% items.forEach(function(item) { %>
+    <div class="card">
+      <img class="card-thumb"
+        src="<%= item.thumbSm || item.thumb %>"
+        alt="<%= item.brand %>"
+        loading="lazy" />
+      <div class="card-body">
+        <div class="card-brand"><%= item.brand || '(no brand)' %></div>
+        <div class="card-type"><%= item.type %> &nbsp;·&nbsp; <%= item.isVideo ? '🎬 video' : '🖼 image' %></div>
+        <select data-pid="<%= item.public_id %>" data-isvideo="<%= item.isVideo %>">
+          <option value=""         <%= !item.position                  ? 'selected' : '' %>>— None —</option>
+          <option value="featured" <%= item.position === 'featured'    ? 'selected' : '' %>>1 · Featured (large left)</option>
+          <option value="side-1"   <%= item.position === 'side-1'      ? 'selected' : '' %>>2 · Side top-left</option>
+          <option value="side-2"   <%= item.position === 'side-2'      ? 'selected' : '' %>>3 · Side top-right</option>
+          <option value="side-3"   <%= item.position === 'side-3'      ? 'selected' : '' %>>4 · Side bottom-left</option>
+          <option value="side-4"   <%= item.position === 'side-4'      ? 'selected' : '' %>>5 · Side bottom-right</option>
+        </select>
+        <button class="save-btn" onclick="savePosition(this)">Save</button>
+      </div>
+    </div>
+    <% }); %>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    function showToast(msg, isErr) {
+      var t = document.getElementById('toast');
+      t.textContent = msg;
+      t.style.borderColor = isErr ? 'rgba(255,80,80,0.4)' : 'rgba(0,212,255,0.3)';
+      t.style.color = isErr ? '#ff5050' : '#00d4ff';
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 2500);
+    }
+
+    async function savePosition(btn) {
+      var card  = btn.closest('.card-body');
+      var sel   = card.querySelector('select');
+      var pid   = sel.dataset.pid;
+      var isVid = sel.dataset.isvideo;
+      var pos   = sel.value;
+
+      btn.classList.add('saving');
+      btn.textContent = 'Saving…';
+
+      try {
+        var res = await fetch('/admin/set-position', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ public_id: pid, position: pos, isVideo: isVid })
+        });
+        if (!res.ok) throw new Error('Server error');
+        btn.classList.remove('saving');
+        btn.classList.add('saved');
+        btn.textContent = '✓ Saved';
+        showToast('Position updated — refresh homepage to see changes.');
+        setTimeout(function(){ btn.classList.remove('saved'); btn.textContent = 'Save'; }, 2000);
+      } catch(e) {
+        btn.classList.remove('saving');
+        btn.textContent = 'Save';
+        showToast('Error saving position.', true);
+      }
+    }
+  </script>
+</body>
+</html>
