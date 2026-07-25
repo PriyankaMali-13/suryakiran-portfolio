@@ -1,12 +1,17 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const { v2: cloudinary } = require('cloudinary');
 const { Resend } = require('resend');
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -14,105 +19,71 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const CLD = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}`;
+// ── Fetch all media live from Cloudinary ──────────────────────────────────────
+async function fetchMedia() {
+  try {
+    const [images, videos] = await Promise.all([
+      cloudinary.api.resources({ type: 'upload', prefix: 'ayrus-creatives/', context: true, max_results: 200 }),
+      cloudinary.api.resources({ type: 'upload', prefix: 'ayrus-creatives/', context: true, max_results: 200, resource_type: 'video' }),
+    ]);
 
-function img(id, w = 800, h = 600) {
-  return `${CLD}/image/upload/w_${w},h_${h},c_fill,q_auto,f_auto/ayrus-creatives/${id}.png`;
+    const CLD = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}`;
+
+    const toItem = (r) => {
+      const isVideo = r.resource_type === 'video';
+      const id = r.public_id.split('/').pop();
+      return {
+        public_id: r.public_id,
+        brand: r.context?.custom?.brand || '',
+        type: r.context?.custom?.type || 'Other',
+        brief: r.context?.custom?.brief || '',
+        position: r.context?.custom?.position || '',
+        isVideo,
+        url: isVideo
+          ? `${CLD}/video/upload/${r.public_id}.mp4`
+          : `${CLD}/image/upload/w_800,h_600,c_fill,q_auto,f_auto/${r.public_id}.png`,
+        thumb: isVideo
+          ? `${CLD}/video/upload/so_0,w_800,h_600,c_fill,q_auto,f_jpg/${r.public_id}.jpg`
+          : `${CLD}/image/upload/w_800,h_600,c_fill,q_auto,f_auto/${r.public_id}.png`,
+        thumbSm: isVideo
+          ? `${CLD}/video/upload/so_0,w_400,h_300,c_fill,q_auto,f_jpg/${r.public_id}.jpg`
+          : `${CLD}/image/upload/w_400,h_300,c_fill,q_auto,f_auto/${r.public_id}.png`,
+        created_at: r.created_at,
+      };
+    };
+
+    const all = [...images.resources.map(toItem), ...videos.resources.map(toItem)]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    // Featured: item with position='featured', fallback to first video
+    const featured = all.find(i => i.position === 'featured') || all.find(i => i.isVideo) || all[0];
+
+    // Side items: next 4 items that aren't the featured one
+    const featuredSide = all.filter(i => i.public_id !== featured?.public_id).slice(0, 4);
+
+    // Group into categories by type
+    const categoryMap = {};
+    all.forEach(item => {
+      const cat = item.type || 'Other';
+      if (!categoryMap[cat]) categoryMap[cat] = [];
+      categoryMap[cat].push(item);
+    });
+
+    // Preferred category order
+    const order = ['Hyper Motion', 'UGC', 'Brand Identity', 'Cinematic Stills', 'Billboard', 'ASMR', 'Unboxing'];
+    const categories = [
+      ...order.filter(c => categoryMap[c]).map(c => ({ name: c, items: categoryMap[c] })),
+      ...Object.keys(categoryMap).filter(c => !order.includes(c)).map(c => ({ name: c, items: categoryMap[c] })),
+    ];
+
+    return { featured, featuredSide, categories };
+  } catch (err) {
+    console.error('Cloudinary fetch error:', err.message);
+    return { featured: null, featuredSide: [], categories: [] };
+  }
 }
 
-function vid(id) {
-  return `${CLD}/video/upload/ayrus-creatives/${id}.mp4`;
-}
-
-function vidThumb(id, w = 800, h = 600) {
-  return `${CLD}/video/upload/so_0,w_${w},h_${h},c_fill,q_auto,f_jpg/ayrus-creatives/${id}.jpg`;
-}
-
-const media = {
-  featured: {
-    type: 'video',
-    videoUrl: `${CLD}/video/upload/ayrus-creatives/ejssft7kph7n6oa5xrbd.mp4`,
-    thumb: vidThumb('ejssft7kph7n6oa5xrbd', 900, 600),
-    brand: 'Rang Studio',
-    brief: 'Hypermotion video of Rang Foundation',
-    category: 'Hyper Motion',
-  },
-  featuredSide: [
-    { type: 'video', videoUrl: vid('arffxnz7hrzato7djm5z'), thumb: vidThumb('arffxnz7hrzato7djm5z', 500, 300), brand: 'Jalsa', brief: 'Ashwagandha Drink', category: 'Hyper Motion' },
-    { type: 'image', url: img('axubilv5jimbbfpbvw1r', 500, 300), brand: 'SunKind', brief: 'Sunscreen Cinematic Still', category: 'Cinematic Stills' },
-    { type: 'image', url: img('lytyojouq7cjrchomwb5', 500, 300), brand: 'Jalsa', brief: 'Feel good, for real', category: 'Brand Identity' },
-    { type: 'image', url: img('bd6fqdddkootmyqodvwx', 500, 300), brand: 'Rang Studio', brief: 'Product Billboard', category: 'Billboard' },
-  ],
-  categories: [
-    {
-      name: 'UGC',
-      items: [
-        { type: 'video', videoUrl: vid('k4zcvs8o1wkkzmd6lede'), thumb: vidThumb('k4zcvs8o1wkkzmd6lede'), brand: "It's Skin", brief: 'Collagen Peptide Review' },
-        { type: 'video', videoUrl: vid('ziuqbymc44nx1uahvqj1'), thumb: vidThumb('ziuqbymc44nx1uahvqj1'), brand: 'Kaash', brief: 'AI UGC' },
-      ],
-    },
-    {
-      name: 'Brand Identity',
-      items: [
-        { type: 'image', url: img('nrgr70saxewye8pbjxqo'), brand: 'Rang Studio', brief: 'Every shade is the main character' },
-        { type: 'image', url: img('lytyojouq7cjrchomwb5'), brand: 'Jalsa', brief: 'Feel good, for real' },
-        { type: 'image', url: img('laccsj4lrfzxtl5djh6l'), brand: 'Kaash', brief: 'Wear it your way' },
-      ],
-    },
-    {
-      name: 'Hyper Motion',
-      items: [
-        { type: 'video', videoUrl: vid('ejssft7kph7n6oa5xrbd'), thumb: vidThumb('ejssft7kph7n6oa5xrbd'), brand: 'Rang Studio', brief: 'Rang Foundation' },
-        { type: 'video', videoUrl: vid('arffxnz7hrzato7djm5z'), thumb: vidThumb('arffxnz7hrzato7djm5z'), brand: 'Jalsa', brief: 'Ashwagandha Drink' },
-        { type: 'video', videoUrl: vid('jrccvcio6wfdptpu10jt'), thumb: vidThumb('jrccvcio6wfdptpu10jt'), brand: 'Kaash', brief: 'Hero Product Shoot 2' },
-        { type: 'video', videoUrl: vid('zyxh4boev6kvi24iugld'), thumb: vidThumb('zyxh4boev6kvi24iugld'), brand: 'Kaash', brief: 'Hero Product Shoot 1' },
-        { type: 'video', videoUrl: `${CLD}/video/upload/ayrus-creatives/tlo3aavpmj2okiacdiua.mp4`, thumb: vidThumb('tlo3aavpmj2okiacdiua'), brand: 'SunKind', brief: 'Sunscreen Hyper Motion' },
-        { type: 'video', videoUrl: vid('eyo6ycfz38ut44ct0uvh'), thumb: vidThumb('eyo6ycfz38ut44ct0uvh'), brand: 'Ayrus', brief: 'SaaS Brand Intro' },
-      ],
-    },
-    {
-      name: 'Cinematic Stills',
-      items: [
-        { type: 'image', url: img('rb41pctu7g02vdfgla5s'), brand: 'Tuyo', brief: 'Poppy Curtains Still 2' },
-        { type: 'image', url: img('owkqouhowcig09pslhxy'), brand: 'Tuyo', brief: 'Poppy Curtains Still 1' },
-        { type: 'image', url: img('ifvbjsd30tiktjc69kw1'), brand: 'SunKind', brief: 'Face Wash Still' },
-        { type: 'image', url: img('eah0fk0pjw3qi1ahqw9i'), brand: 'SunKind', brief: 'Moisturizer Still' },
-        { type: 'image', url: img('axubilv5jimbbfpbvw1r'), brand: 'SunKind', brief: 'Sunscreen Still' },
-        { type: 'image', url: img('wbymrbq662ntlwauc8en'), brand: 'Jalsa', brief: 'Cinematic Shoot 3' },
-        { type: 'image', url: img('pd77kyfh5luv3ssvadf2'), brand: 'Jalsa', brief: 'Cinematic Shoot 2' },
-        { type: 'image', url: img('zt8kypzmb4m3tco48tun'), brand: 'Kaash', brief: 'Cinematic Shoot 3' },
-        { type: 'image', url: img('ggutstlupxuzajmaamjr'), brand: 'Kaash', brief: 'Cinematic Shoot 2' },
-        { type: 'image', url: img('ljenmrhstuvvnfhfswqx'), brand: 'Kaash', brief: 'Cinematic Shoot 1' },
-      ],
-    },
-    {
-      name: 'Billboard',
-      items: [
-        { type: 'image', url: img('ns92t4ax4wqeu3yozqjb'), brand: 'Jalsa', brief: 'Emotion Led Billboard' },
-        { type: 'image', url: img('is9dgzbkdorfhzn4olay'), brand: 'Jalsa', brief: 'Product Billboard' },
-        { type: 'image', url: img('enfiq1l0ikgxprgmkmgz'), brand: 'Kaash', brief: 'Product Billboard' },
-        { type: 'image', url: img('t2jevqttnpiyhcnz0eey'), brand: 'Kaash', brief: 'Hero Billboard' },
-        { type: 'image', url: img('g8jhu6q0fscnk7o3qjf0'), brand: 'Rang Studio', brief: 'Texture Billboard' },
-        { type: 'image', url: img('bd6fqdddkootmyqodvwx'), brand: 'Rang Studio', brief: 'Product Billboard' },
-        { type: 'image', url: img('kefi8vencpw0rj3gw7op'), brand: 'Rang Studio', brief: 'Hero Billboard' },
-      ],
-    },
-    {
-      name: 'ASMR',
-      items: [
-        { type: 'video', videoUrl: `${CLD}/video/upload/ayrus-creatives/yxzmyckjy1lozcnv0qgs.mp4`, thumb: vidThumb('yxzmyckjy1lozcnv0qgs'), brand: 'Jalsa', brief: 'Tulsi Mint ASMR' },
-        { type: 'video', videoUrl: `${CLD}/video/upload/ayrus-creatives/pidslennh07ca47ujihr.mp4`, thumb: vidThumb('pidslennh07ca47ujihr'), brand: 'Rang Studio', brief: 'Lipstick ASMR' },
-      ],
-    },
-    {
-      name: 'Unboxing',
-      items: [
-        { type: 'video', videoUrl: `${CLD}/video/upload/ayrus-creatives/rgfqq8mucx7sz8a110lq.mp4`, thumb: vidThumb('rgfqq8mucx7sz8a110lq'), brand: 'Kaash', brief: 'Unboxing Video' },
-      ],
-    },
-  ],
-};
-
+// ── Personal data ─────────────────────────────────────────────────────────────
 const data = {
   name: 'Suryakiran Mali',
   role: 'Founder & AI Creative Director',
@@ -182,7 +153,6 @@ I enjoy collaborating with founders, marketing teams and brands that value innov
   ],
   awards: [],
   certifications: [],
-  media,
   social: {
     github: '',
     linkedin: 'https://www.linkedin.com/in/suryakiran-mali-771a43422/',
@@ -190,18 +160,21 @@ I enjoy collaborating with founders, marketing teams and brands that value innov
   },
 };
 
-app.get('/', (req, res) => {
-  res.render('index', { data });
+// ── Routes ────────────────────────────────────────────────────────────────────
+app.get('/', async (req, res) => {
+  const media = await fetchMedia();
+  res.render('index', { data: { ...data, media } });
 });
 
 app.post('/contact', async (req, res) => {
   const { name, email, message } = req.body;
   console.log('\n📬 New contact form submission:', { name, email });
-
   try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
       from: 'Portfolio Contact <onboarding@resend.dev>',
       to: 'suryamali007@gmail.com',
+      reply_to: email,
       subject: `New message from ${name} via Portfolio`,
       html: `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#0a0a1a;color:#e8e8f0;border-radius:12px;">
@@ -217,7 +190,6 @@ app.post('/contact', async (req, res) => {
         </div>
       `,
     });
-
     res.json({ success: true, message: "Thanks! I'll get back to you soon." });
   } catch (err) {
     console.error('Resend error:', err);
