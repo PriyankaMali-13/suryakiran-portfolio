@@ -365,9 +365,16 @@
       <p class="section-subtitle text-center mb-5">AI-powered campaigns, visuals &amp; videos for D2C brands</p>
 
       <!-- Featured Bento Grid -->
+      <% if (!data.media.featured && data.media.categories.length === 0) { %>
+        <div class="text-center py-5" style="color:var(--text-muted)">
+          <i class="bi bi-image" style="font-size:2rem;opacity:0.2;display:block;margin-bottom:12px"></i>
+          <p>Gallery is loading. Please refresh in a moment.</p>
+        </div>
+      <% } %>
+      <% if (data.media.featured) { %>
       <div class="featured-grid mb-5">
         <!-- Featured large video -->
-        <div class="featured-main" onclick="openLightbox('<%= data.media.featured.url %>', '<%= data.media.featured.isVideo ? "video" : "image" %>')">
+        <div class="featured-main" onclick="openByPid('<%= data.media.featured.public_id %>')">
           <% if (data.media.featured.isVideo) { %>
           <video class="featured-media" autoplay muted loop playsinline poster="<%= data.media.featured.thumb %>">
             <source src="<%= data.media.featured.url %>" type="video/mp4" />
@@ -376,7 +383,7 @@
           <img class="featured-media" src="<%= data.media.featured.url %>" alt="<%= data.media.featured.brief %>" />
           <% } %>
           <div class="featured-overlay">
-            <span class="featured-cat-badge"><%= data.media.featured.category %></span>
+            <span class="featured-cat-badge"><%= data.media.featured.type %></span>
             <div class="featured-info">
               <div class="featured-brand"><%= data.media.featured.brand %></div>
               <div class="featured-brief"><%= data.media.featured.brief %></div>
@@ -387,13 +394,13 @@
         <!-- Side items -->
         <div class="featured-side">
           <% data.media.featuredSide.forEach(item => { %>
-          <div class="featured-side-item" onclick="openLightbox('<%= item.url %>', '<%= item.isVideo ? "video" : "image" %>')">
+          <div class="featured-side-item" onclick="openByPid('<%= item.public_id %>')">
             <img src="<%= item.thumb %>" alt="<%= item.brief %>" loading="lazy" />
             <% if (item.isVideo) { %>
               <div class="play-icon"><i class="bi bi-play-fill"></i></div>
             <% } %>
             <div class="side-overlay">
-              <span class="side-cat"><%= item.category %></span>
+              <span class="side-cat"><%= item.type %></span>
               <span class="side-brief"><%= item.brief %></span>
             </div>
           </div>
@@ -401,11 +408,12 @@
         </div>
       </div>
 
+      <% } %>
       <!-- Category Grid -->
       <div class="row g-4">
         <% data.media.categories.forEach(cat => { %>
         <div class="col-6 col-md-4 col-lg-3">
-          <div class="cat-card" data-cat="<%= cat.name %>">
+          <div class="cat-card" data-cat="<%= cat.name %>" onclick="openFolder('<%= cat.name %>')">
             <div class="cat-thumbs">
               <% cat.items.slice(0,4).forEach(item => { %>
                 <div class="cat-thumb">
@@ -426,22 +434,31 @@
     </div>
   </section>
 
-  <!-- Lightbox Modal -->
-  <div id="lightbox" class="lightbox-overlay" onclick="closeLightbox()">
+  <!-- Lightbox Modal (with prev/next navigation) -->
+  <div id="lightbox" class="lightbox-overlay" onclick="if(event.target===this)closeLightbox()">
     <div class="lightbox-content" onclick="event.stopPropagation()">
-      <button class="lightbox-close" onclick="closeLightbox()"><i class="bi bi-x-lg"></i></button>
-      <div id="lightboxMedia"></div>
+      <div class="lb-inner-wrapper">
+        <button class="lightbox-close" onclick="closeLightbox()"><i class="bi bi-x-lg"></i></button>
+        <button class="lb-nav lb-nav-prev hidden" id="lb-prev" onclick="lbNavigate(-1)">&#8249;</button>
+        <button class="lb-nav lb-nav-next hidden" id="lb-next" onclick="lbNavigate(1)">&#8250;</button>
+        <div id="lightboxMedia"></div>
+      </div>
+      <div id="lb-caption" class="lb-caption" style="display:none">
+        <p class="lb-caption-type" id="lb-type"></p>
+        <h3 class="lb-caption-brand" id="lb-brand"></h3>
+        <p class="lb-caption-brief" id="lb-brief"></p>
+      </div>
     </div>
   </div>
 
-  <!-- Category Modal -->
-  <div id="catModal" class="lightbox-overlay" onclick="closeCatModal()">
+  <!-- Folder / Category Modal -->
+  <div id="folderModal" class="lightbox-overlay" onclick="if(event.target===this)closeFolder()">
     <div class="cat-modal-content" onclick="event.stopPropagation()">
       <div class="cat-modal-header">
-        <h5 id="catModalTitle"></h5>
-        <button class="lightbox-close" onclick="closeCatModal()"><i class="bi bi-x-lg"></i></button>
+        <h5 id="folderModalTitle"></h5>
+        <button class="folder-close" onclick="closeFolder()"><i class="bi bi-x-lg"></i></button>
       </div>
-      <div id="catModalGrid" class="cat-modal-grid"></div>
+      <div id="folderModalGrid" class="cat-modal-grid"></div>
     </div>
   </div>
 
@@ -521,17 +538,14 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    window.__catItems = <%- JSON.stringify(data.media.categories.reduce((acc, c) => {
-      acc[c.name] = c.items.map(i => ({
-        type: i.isVideo ? 'video' : 'image',
-        videoUrl: i.url,
-        url: i.url,
-        thumb: i.thumb,
-        brand: i.brand,
-        brief: i.brief
-      }));
-      return acc;
-    }, {})) %>;
+    // Flat array of all media items (deduped) for index-based navigation
+    window.allMedia = <%- JSON.stringify(
+      Array.from(
+        new Map(
+          data.media.categories.flatMap(c => c.items).map(i => [i.public_id, i])
+        ).values()
+      )
+    ) %>;
   </script>
   <script src="/js/main.js"></script>
 </body>

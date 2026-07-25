@@ -106,54 +106,139 @@ if (form) {
   });
 }
 
-// ---- Lightbox ----
-function openLightbox(url, type) {
-  const lb = document.getElementById('lightbox');
+// ---- Lightbox with prev/next navigation ----
+var _lbNavList = [];   // indices into window.allMedia for current context
+var _lbNavPos  = 0;    // current position in _lbNavList
+var _lbReturnFolder = null;
+
+function openByPid(pid) {
+  const idx = (window.allMedia || []).findIndex(i => i.public_id === pid);
+  _lbNavList = [];
+  _lbNavPos  = 0;
+  _renderLightbox(idx >= 0 ? idx : 0);
+}
+
+function openLightboxFromFolder(index, catName) {
+  _lbReturnFolder = catName;
+  document.getElementById('folderModal').classList.remove('active'); // close folder so lightbox is visible
+  const catItems = (window.allMedia || [])
+    .map((item, i) => ({ item, i }))
+    .filter(o => o.item.type === catName)
+    .map(o => o.i);
+  _lbNavList = catItems;
+  _lbNavPos  = catItems.indexOf(index);
+  _renderLightbox(index);
+}
+
+function _renderLightbox(index) {
+  const item = (window.allMedia || [])[index];
+  if (!item) return;
+
   const mediaEl = document.getElementById('lightboxMedia');
-  mediaEl.innerHTML = type === 'video'
-    ? `<video controls autoplay playsinline style="width:100%;max-height:80vh"><source src="${url}" type="video/mp4"></video>`
-    : `<img src="${url}" alt="" style="width:100%;max-height:80vh;object-fit:contain" />`;
-  lb.classList.add('active');
+  const fullSrc = item.fullUrl || item.url;
+  const thumbSrc = item.thumb || item.url;
+
+  if (item.isVideo) {
+    mediaEl.innerHTML = `<video controls autoplay playsinline><source src="${fullSrc}" type="video/mp4"></video>`;
+  } else {
+    // Show thumb immediately, swap to full resolution when ready
+    const img = new Image();
+    img.alt = item.brand || '';
+    img.src = thumbSrc;
+    img.style.filter = 'blur(6px)';
+    img.style.transition = 'filter 0.4s ease';
+    mediaEl.innerHTML = '';
+    mediaEl.appendChild(img);
+    const full = new Image();
+    full.onload = () => {
+      img.src = fullSrc;
+      img.style.filter = 'none';
+    };
+    full.src = fullSrc;
+  }
+
+  const caption = document.getElementById('lb-caption');
+  const typeEl  = document.getElementById('lb-type');
+  const brandEl = document.getElementById('lb-brand');
+  const briefEl = document.getElementById('lb-brief');
+  if (item.brand || item.brief || item.type) {
+    caption.style.display = '';
+    typeEl.textContent  = item.type  || '';
+    brandEl.textContent = item.brand || '';
+    briefEl.textContent = item.brief || '';
+  } else {
+    caption.style.display = 'none';
+  }
+
+  const prev = document.getElementById('lb-prev');
+  const next = document.getElementById('lb-next');
+  if (_lbNavList.length > 1) {
+    prev.classList.toggle('hidden', _lbNavPos <= 0);
+    next.classList.toggle('hidden', _lbNavPos >= _lbNavList.length - 1);
+  } else {
+    prev.classList.add('hidden');
+    next.classList.add('hidden');
+  }
+
+  document.getElementById('lightbox').classList.add('active');
+}
+
+function lbNavigate(dir) {
+  const newPos = _lbNavPos + dir;
+  if (newPos < 0 || newPos >= _lbNavList.length) return;
+  _lbNavPos = newPos;
+  _renderLightbox(_lbNavList[_lbNavPos]);
 }
 
 function closeLightbox() {
-  const lb = document.getElementById('lightbox');
-  lb.classList.remove('active');
+  document.getElementById('lightbox').classList.remove('active');
   document.getElementById('lightboxMedia').innerHTML = '';
+  if (_lbReturnFolder) {
+    const cat = _lbReturnFolder;
+    _lbReturnFolder = null;
+    openFolder(cat);
+  }
 }
 
-// ---- Category Modal ----
-const catData = {};
-document.querySelectorAll('.cat-card').forEach(card => {
-  card.addEventListener('click', () => {
-    const catName = card.dataset.cat;
-    openCatModal(catName);
-  });
+// ---- Folder / Category Modal ----
+function openFolder(catName) {
+  const items = (window.allMedia || [])
+    .map((item, i) => ({ item, i }))
+    .filter(o => o.item.type === catName);
+
+  document.getElementById('folderModalTitle').textContent = catName;
+  const grid = document.getElementById('folderModalGrid');
+
+  if (items.length === 0) {
+    grid.innerHTML = '<p style="color:#999;grid-column:span 3;text-align:center;padding:40px">No items in this category yet.</p>';
+  } else {
+    grid.innerHTML = items.map(({ item, i }) => {
+      const thumb = item.thumb || item.url;
+      return `<div class="cat-modal-item" onclick="openLightboxFromFolder(${i}, '${catName}')">
+        <img src="${thumb}" alt="${item.brand}" loading="lazy" />
+        ${item.isVideo ? '<div class="play-icon"><i class="bi bi-play-fill"></i></div>' : ''}
+        <div class="cat-modal-caption">${item.brand}${item.brief ? ' — ' + item.brief : ''}</div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('folderModal').classList.add('active');
+}
+
+function closeFolder() {
+  document.getElementById('folderModal').classList.remove('active');
+}
+
+// Keyboard navigation for lightbox
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('lightbox').classList.contains('active')) {
+    if (e.key === 'Escape') { closeLightbox(); return; }
+    if (e.key === 'ArrowLeft')  lbNavigate(-1);
+    if (e.key === 'ArrowRight') lbNavigate(1);
+  } else if (document.getElementById('folderModal').classList.contains('active')) {
+    if (e.key === 'Escape') closeFolder();
+  }
 });
-
-function openCatModal(catName) {
-  const modal = document.getElementById('catModal');
-  const grid = document.getElementById('catModalGrid');
-  const title = document.getElementById('catModalTitle');
-  title.textContent = catName;
-
-  // Pull items from inline data set on the page
-  const items = window.__catItems?.[catName] || [];
-  grid.innerHTML = items.map(item => {
-    const thumb = item.type === 'video' ? item.thumb : item.url;
-    const src = item.type === 'video' ? item.videoUrl : item.url;
-    return `<div class="cat-modal-item" onclick="openLightbox('${src}','${item.type}')">
-      <img src="${thumb}" alt="${item.brief}" loading="lazy" />
-      ${item.type === 'video' ? '<div class="play-icon"><i class="bi bi-play-fill"></i></div>' : ''}
-      <div class="cat-modal-caption">${item.brand} — ${item.brief}</div>
-    </div>`;
-  }).join('');
-  modal.classList.add('active');
-}
-
-function closeCatModal() {
-  document.getElementById('catModal').classList.remove('active');
-}
 
 // Scroll reveal
 document.addEventListener('DOMContentLoaded', () => {

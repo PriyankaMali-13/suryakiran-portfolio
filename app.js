@@ -42,6 +42,9 @@ async function fetchMedia() {
         url: isVideo
           ? `${CLD}/video/upload/${r.public_id}.mp4`
           : `${CLD}/image/upload/w_800,h_600,c_fill,q_auto,f_auto/${r.public_id}.png`,
+        fullUrl: isVideo
+          ? `${CLD}/video/upload/q_auto/${r.public_id}.mp4`
+          : `${CLD}/image/upload/q_auto,f_auto/${r.public_id}`,
         thumb: isVideo
           ? `${CLD}/video/upload/so_0,w_800,h_600,c_fill,q_auto,f_jpg/${r.public_id}.jpg`
           : `${CLD}/image/upload/w_800,h_600,c_fill,q_auto,f_auto/${r.public_id}.png`,
@@ -79,6 +82,13 @@ async function fetchMedia() {
     return { featured, featuredSide, categories };
   } catch (err) {
     console.error('Cloudinary fetch error:', err.message);
+    // Retry once on network errors
+    if (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
+      try {
+        await new Promise(r => setTimeout(r, 1500));
+        return await fetchMedia();
+      } catch (_) {}
+    }
     return { featured: null, featuredSide: [], categories: [] };
   }
 }
