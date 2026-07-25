@@ -107,7 +107,7 @@ const data = {
   name: 'Suryakiran Mali',
   role: 'Founder & AI Creative Director',
   tagline: 'Building brands through AI-powered visual storytelling.',
-  stack: ['AI Tools', 'Creative Strategy', 'Algorithmic Trading'],
+  stack: ['AI Tools', 'Creative Strategy', 'Brand Storytelling'],
   loves: 'Visual Storytelling',
   status: 'Open to Collaborations',
   location: 'Mumbai, Maharashtra, India',

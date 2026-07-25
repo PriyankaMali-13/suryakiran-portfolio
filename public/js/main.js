@@ -2,6 +2,16 @@
    SURYAKIRAN MALI — PORTFOLIO SCRIPTS
    ============================================= */
 
+// Featured video: play on hover, pause on leave
+document.addEventListener('DOMContentLoaded', function () {
+  var v = document.getElementById('featuredVideo');
+  if (!v) return;
+  var container = v.closest('.featured-main');
+  if (!container) return;
+  container.addEventListener('mouseenter', function () { v.play().catch(function () {}); });
+  container.addEventListener('mouseleave', function () { v.pause(); v.currentTime = 0; });
+});
+
 // Navbar scroll effect
 const navbar = document.getElementById('navbar');
 window.addEventListener('scroll', () => {
